@@ -26,10 +26,12 @@ const (
 	tmp    = "testdata/__test.go"
 	source = "testdata/source.cfg"
 	target = "testdata/target.cfg"
+	muti   = "testdata/muti.cfg"
 )
 
 func testGet(t *testing.T, c *Config, section string, option string,
 	expected interface{}) {
+
 	ok := false
 	switch expected.(type) {
 	case string:
@@ -53,6 +55,60 @@ func testGet(t *testing.T, c *Config, section string, option string,
 	if !ok {
 		v, _ := c.String(section, option)
 		t.Errorf("Get failure: expected different value for %s %s (expected: [%#v] got: [%#v])", section, option, expected, v)
+	}
+}
+
+func testGetMuti(t *testing.T, c *Config, section string, option string,
+	expected interface{}) {
+	ok := false
+	switch expected.(type) {
+	case []string:
+		v, err := c.StringMuti(section, option)
+		if nil != err {
+			t.Fatalf("fail of err:%s", err)
+		}
+		if len(v) == len(expected.([]string)) {
+			ok = true
+			for index, expectedEle := range expected.([]string) {
+				if expectedEle != v[index] {
+					ok = false
+				}
+			}
+
+		}
+	case []int:
+		v, err := c.IntMuti(section, option)
+		if nil != err {
+			t.Fatalf("fail of err:%s", err)
+		}
+		if len(v) == len(expected.([]int)) {
+			ok = true
+			for index, expectedEle := range expected.([]int) {
+				if expectedEle != v[index] {
+					ok = false
+				}
+			}
+		}
+	case []bool:
+		v, err := c.BoolMuti(section, option)
+		if nil != err {
+			t.Fatalf("fail of err:%s", err)
+		}
+		if len(v) == len(expected.([]bool)) {
+			ok = true
+			for index, expectedEle := range expected.([]bool) {
+				if expectedEle != v[index] {
+					ok = false
+				}
+			}
+		}
+
+	default:
+		t.Fatalf("Bad test case:section:%s,option:%s", section, option)
+	}
+	if !ok {
+		v, _ := c.StringMuti(section, option)
+		t.Errorf("GetMuti failure: expected different value for %s %s (expected: [%#v] got: [%#v])", section, option, expected, v)
 	}
 }
 
@@ -288,6 +344,41 @@ func TestWriteReadFile(t *testing.T) {
 	defer os.Remove(tmp)
 }
 
+// TestWriteReadFileMuti tests writing and reading back a configuration file.
+func TestWriteReadFileMuti(t *testing.T) {
+	cw := NewDefault()
+
+	// write file; will test only read later on
+	cw.AddSection("First-Section")
+	cw.AddOption("First-Section", MUTI_KEY_IDENTIFIER+"option1", "value option1")
+	cw.AddOption("First-Section", MUTI_KEY_IDENTIFIER+"option1", "value option2")
+	cw.AddOption("First-Section", "option2", "2")
+
+	cw.AddOption("", "host", "www.example.com")
+	cw.AddOption(DEFAULT_SECTION, "protocol", "https://")
+	cw.AddOption(DEFAULT_SECTION, "base-url", "%(protocol)s%(host)s")
+
+	cw.AddOption("Another-Section", MUTI_KEY_IDENTIFIER+"useHTTPS", "y")
+	cw.AddOption("Another-Section", MUTI_KEY_IDENTIFIER+"useHTTPS", "n")
+	cw.AddOption("Another-Section", MUTI_KEY_IDENTIFIER+"useHTTPS", "y")
+	cw.AddOption("Another-Section", "url", "%(base-url)s/some/path")
+
+	cw.WriteFile(tmp, 0644, "Test file for test-case")
+
+	// read back file and test
+	cr, err := ReadDefault(tmp)
+	if err != nil {
+		t.Fatalf("ReadDefault failure: %s", err)
+	}
+
+	testGetMuti(t, cr, "First-Section", "option1", []string{"value option1", "value option2"})
+	testGet(t, cr, "First-Section", "option2", 2)
+	testGetMuti(t, cr, "Another-Section", "useHTTPS", []bool{true, false, true})
+	testGet(t, cr, "Another-Section", "url", "https://www.example.com/some/path")
+
+	//defer os.Remove(tmp)
+}
+
 // TestSectionOptions tests read options in a section without default options.
 func TestSectionOptions(t *testing.T) {
 	cw := NewDefault()
@@ -360,41 +451,67 @@ func TestSectionOptions(t *testing.T) {
 	defer os.Remove(tmp)
 }
 
-// TestMerge tests merging 2 configurations.
-func TestMerge(t *testing.T) {
-	target, error := ReadDefault(target)
-	if error != nil {
-		t.Fatalf("Unable to read target config file '%s'", target)
+// TestReadFileMuti creates a 'tough' configuration file and test (read) parsing.
+func TestReadFileMuti(t *testing.T) {
+	file, err := os.Create(muti)
+	if err != nil {
+		t.Fatal("Test cannot run because cannot write temporary file: " + muti)
 	}
 
-	source, error := ReadDefault(source)
-	if error != nil {
-		t.Fatalf("Unable to read source config file '%s'", source)
+	err = os.Setenv("GO_CONFIGFILE_TEST_ENV_VAR", "configvalue12345")
+	if err != nil {
+		t.Fatalf("Test cannot run because cannot set environment variable GO_CONFIGFILE_TEST_ENV_VAR: %#v", err)
 	}
 
-	target.Merge(source)
+	buf := bufio.NewWriter(file)
+	buf.WriteString("@optionInDefaultSection=true\n")
+	buf.WriteString("@optionInDefaultSection=false\n")
+	buf.WriteString("[section-1]\n")
+	buf.WriteString("  @option1=value1.1 ; This is a comment\n")
+	buf.WriteString("  @option1=value1.2 ; This is a comment\n")
+	buf.WriteString(" @option2 : 2.1#Not a comment\t#Now this is a comment after a TAB\n")
+	buf.WriteString(" @option2 : 2.2#Not a comment\t#Now this is a comment after a TAB\n")
+	buf.WriteString("  # Let me put another comment\n")
+	buf.WriteString("; Another comment\n")
+	buf.WriteString("@option5=on\n")
+	buf.WriteString("@option5=false\n")
+	buf.WriteString("@option5=false\n")
+	buf.WriteString("@option6=985\n")
+	buf.WriteString("@option6=211\n")
+	buf.WriteString("[" + DEFAULT_SECTION + "]\n")
+	buf.WriteString("variable1=small\n")
+	buf.WriteString("variable2=a_part_of_a_%(variable1)_test\n")
+	buf.WriteString("[secTION-2]\n")
+	buf.WriteString("@IS-flag-TRUE=Yes\n")
+	buf.WriteString("@IS-flag-TRUE=No\n")
+	buf.WriteString("[section-1]\n") // continue again [section-1]
+	buf.WriteString("option4=this_is_%(variable2)s.\n")
+	buf.WriteString("envoption1=this_uses_${GO_CONFIGFILE_TEST_ENV_VAR}_env\n")
+	buf.WriteString("@optionInDefaultSection=false\n")
+	buf.Flush()
+	file.Close()
 
-	// Assert whether a regular option was merged from source -> target
-	if result, _ := target.String(DEFAULT_SECTION, "one"); result != "source1" {
-		t.Errorf("Expected 'one' to be '1' but instead it was '%s'", result)
-	}
-	// Assert that a non-existent option in source was not overwritten
-	if result, _ := target.String(DEFAULT_SECTION, "five"); result != "5" {
-		t.Errorf("Expected 'five' to be '5' but instead it was '%s'", result)
-	}
-	// Assert that a folded option was correctly unfolded
-	if result, _ := target.String(DEFAULT_SECTION, "two_+_three"); result != "source2 + source3" {
-		t.Errorf("Expected 'two_+_three' to be 'source2 + source3' but instead it was '%s'", result)
-	}
-	if result, _ := target.String(DEFAULT_SECTION, "four"); result != "4" {
-		t.Errorf("Expected 'four' to be '4' but instead it was '%s'", result)
+	c, err := ReadDefault(muti)
+	if err != nil {
+		t.Fatalf("ReadDefault failure: %s", err)
 	}
 
-	// Assert that a section option has been merged
-	if result, _ := target.String("X", "x.one"); result != "sourcex1" {
-		t.Errorf("Expected '[X] x.one' to be 'sourcex1' but instead it was '%s'", result)
+	// check number of sections
+	if len(c.Sections()) != 3 {
+		t.Errorf("Sections failure: wrong number of sections")
 	}
-	if result, _ := target.String("X", "x.four"); result != "x4" {
-		t.Errorf("Expected '[X] x.four' to be 'x4' but instead it was '%s'", result)
+
+	// check number of options 6 of [section-1] plus 2 of [default]
+	opts, err := c.Options("section-1")
+	if len(opts) != 9 {
+		t.Errorf("Options failure: wrong number of options: %d", len(opts))
 	}
+
+	testGetMuti(t, c, "section-1", "option1", []string{"value1.1", "value1.2"})
+	testGetMuti(t, c, "section-1", "option2", []string{"2.1#Not a comment", "2.2#Not a comment"})
+	testGetMuti(t, c, "section-1", "option5", []bool{true, false, false})
+	testGetMuti(t, c, "section-1", "option6", []int{985, 211})
+	testGetMuti(t, c, "section-1", "optionInDefaultSection", []bool{false})
+	testGetMuti(t, c, "section-2", "optionInDefaultSection", []bool{true, false})
+	testGetMuti(t, c, "secTION-2", "IS-flag-TRUE", []bool{true, false}) // case-sensitive
 }

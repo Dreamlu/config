@@ -69,10 +69,21 @@ func (c *Config) write(buf *bufio.Writer, header string) (err error) {
 					for option, tValue := range sectionMap {
 
 						if tValue.position == i {
-							if _, err = buf.WriteString(fmt.Sprint(
-								option, c.separator, tValue.v, "\n")); err != nil {
-								return err
+
+							if len(tValue.vMuti) > 0 {
+								for _, realValue := range tValue.vMuti {
+									if _, err = buf.WriteString(fmt.Sprint(
+										"@", option, c.separator, realValue, "\n")); err != nil {
+										return err
+									}
+								}
+							} else {
+								if _, err = buf.WriteString(fmt.Sprint(
+									option, c.separator, tValue.v, "\n")); err != nil {
+									return err
+								}
 							}
+
 							c.RemoveOption(section, option)
 							break
 						}

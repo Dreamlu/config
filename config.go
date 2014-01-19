@@ -29,6 +29,7 @@ const (
 	ALTERNATIVE_COMMENT   = "; "
 	DEFAULT_SEPARATOR     = ":"
 	ALTERNATIVE_SEPARATOR = "="
+	MUTI_KEY_IDENTIFIER   = "@"
 )
 
 var (
@@ -70,8 +71,9 @@ type Config struct {
 
 // tValue holds the input position for a value.
 type tValue struct {
-	position int    // Option order
-	v        string // value
+	position int      // Option order
+	v        string   // value
+	vMuti    []string //value for muti key
 }
 
 // New creates an empty configuration representation.

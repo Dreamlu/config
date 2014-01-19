@@ -24,6 +24,7 @@ import "errors"
 // It returns true if the option and value were inserted, and false if the value
 // was overwritten.
 func (c *Config) AddOption(section string, option string, value string) bool {
+
 	c.AddSection(section) // Make sure section exists
 
 	if section == "" {
@@ -32,9 +33,24 @@ func (c *Config) AddOption(section string, option string, value string) bool {
 
 	_, ok := c.data[section][option]
 
-	c.data[section][option] = &tValue{c.lastIdOption[section], value}
+	// Add muti key process
+	// muti key will start with MUTI_KEY_IDENTIFIER and may appear more than once
+	// key will be key except MUTI_KEY_IDENTIFIER and value will be an array
+	if MUTI_KEY_IDENTIFIER == string(option[0]) {
+		option = string(option[1:])
+		var vMuti []string
+		val, ok := c.data[section][option]
+		if true == ok {
+			vMuti = val.vMuti
+		} else {
+			vMuti = []string{}
+		}
+		vMuti = append(vMuti, value)
+		c.data[section][option] = &tValue{c.lastIdOption[section], value, vMuti}
+	} else {
+		c.data[section][option] = &tValue{c.lastIdOption[section], value, []string{}}
+	}
 	c.lastIdOption[section]++
-
 	return !ok
 }
 

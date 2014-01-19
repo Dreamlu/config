@@ -60,10 +60,12 @@ func (c *Config) read(buf *bufio.Reader) (err error) {
 
 	for {
 		l, err := buf.ReadString('\n') // parse line-by-line
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return err
+		if len(strings.TrimSpace(l)) == 0 {
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				return err
+			}
 		}
 
 		l = strings.TrimSpace(l)
@@ -97,6 +99,10 @@ func (c *Config) read(buf *bufio.Reader) (err error) {
 				c.AddOption(section, option, value)
 			// Continuation of multi-line value
 			case section != "" && option != "":
+
+				if MUTI_KEY_IDENTIFIER == string(option[0]) {
+					return errors.New("muti key not support muti line")
+				}
 				prev, _ := c.RawString(section, option)
 				value := strings.TrimSpace(stripComments(l))
 				c.AddOption(section, option, prev+"\n"+value)
